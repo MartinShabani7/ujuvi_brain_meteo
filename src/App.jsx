@@ -61,7 +61,7 @@ function App() {
   const [uvIndex, setUvIndex] = useState(null);
   const [mapView, setMapView] = useState(false);
   const [selectedHour, setSelectedHour] = useState(null);
-  const [cityImage, setCityImage] = useState('');
+  const [cityImage, setCityImage] = useState(null);
   const [detailedMetrics, setDetailedMetrics] = useState({});
   const [windData, setWindData] = useState([]);
   const [precipitationData, setPrecipitationData] = useState([]);
@@ -158,6 +158,9 @@ function App() {
            0.3965 * temp * Math.pow(windSpeed, 0.16);
   };
 
+  // Cache pour Unsplash
+  const unsplashCache = useRef({});
+
   // Fonction pour récupérer les données météo complètes
   const fetchWeather = async (cityName, showLoading = true) => {
     if (!cityName.trim()) {
@@ -207,19 +210,99 @@ function App() {
       setForecastData(dailyForecasts);
       setHourlyData(hourlyForecasts);
       
-      // Récupération de l'image de la ville (Utilisation d'un service gratuit)
+      // Récupération de l'image de la ville avec Unsplash
       try {
-        // Utilisation d'une API d'images de villes (remplacez par votre clé API si nécessaire)
-        // Pour l'instant, on utilise un gradient basé sur la température
+        const unsplashAccessKey = 'qrsWgH8XMmZrmwOmb-dNRRJoxTkZ4SX75B1d7d03gGk';
+        const cacheKey = `${weatherData.name}_${weatherData.sys?.country}`;
+        
+        // Vérifier le cache
+        if (unsplashCache.current[cacheKey]) {
+          setCityImage(unsplashCache.current[cacheKey]);
+        } else {
+          // Tentative 1 : Recherche par nom exact de la ville
+          let imageUrl = null;
+          
+          // Construction des termes de recherche
+          const searchTerms = [
+            `${weatherData.name} city landscape`,
+            `${weatherData.name} skyline`,
+            `${weatherData.name} urban`,
+            `${weatherData.sys?.country ? weatherData.name + ' ' + weatherData.sys.country : weatherData.name}`,
+            `${weatherData.name} aerial view`
+          ];
+          
+          // Essayer plusieurs termes de recherche
+          for (const term of searchTerms) {
+            const unsplashResponse = await fetch(
+              `https://api.unsplash.com/search/photos?query=${encodeURIComponent(term)}&client_id=${unsplashAccessKey}&per_page=1&orientation=landscape`
+            );
+            
+            if (unsplashResponse.ok) {
+              const unsplashData = await unsplashResponse.json();
+              if (unsplashData.results && unsplashData.results.length > 0) {
+                imageUrl = unsplashData.results[0].urls.regular;
+                break;
+              }
+            }
+          }
+          
+          // Si aucune image trouvée, utiliser une image basée sur la météo
+          if (!imageUrl) {
+            const weatherCondition = weatherData.weather[0]?.main?.toLowerCase() || 'clear';
+            const unsplashResponse = await fetch(
+              `https://api.unsplash.com/search/photos?query=${encodeURIComponent(weatherCondition + ' weather landscape')}&client_id=${unsplashAccessKey}&per_page=1&orientation=landscape`
+            );
+            
+            if (unsplashResponse.ok) {
+              const unsplashData = await unsplashResponse.json();
+              if (unsplashData.results && unsplashData.results.length > 0) {
+                imageUrl = unsplashData.results[0].urls.regular;
+              }
+            }
+          }
+          
+          // Si on a une image, l'utiliser, sinon utiliser un gradient
+          let newCityImage;
+          if (imageUrl) {
+            newCityImage = {
+              type: 'image',
+              url: imageUrl,
+              alt: `Vue de ${weatherData.name}`
+            };
+          } else {
+            // Fallback : gradient basé sur la température
+            const temp = weatherData.main?.temp;
+            let gradient = 'from-blue-400 to-cyan-400';
+            if (temp > 25) gradient = 'from-yellow-400 to-orange-400';
+            else if (temp > 15) gradient = 'from-green-400 to-teal-400';
+            else if (temp > 5) gradient = 'from-blue-300 to-indigo-300';
+            else gradient = 'from-blue-200 to-purple-300';
+            
+            newCityImage = {
+              type: 'gradient',
+              value: gradient
+            };
+          }
+          
+          // Mettre en cache et mettre à jour l'état
+          unsplashCache.current[cacheKey] = newCityImage;
+          setCityImage(newCityImage);
+        }
+        
+      } catch (unsplashErr) {
+        console.log('Unsplash non disponible, utilisation du gradient par défaut');
+        // Fallback au gradient
         const temp = weatherData.main?.temp;
         let gradient = 'from-blue-400 to-cyan-400';
         if (temp > 25) gradient = 'from-yellow-400 to-orange-400';
         else if (temp > 15) gradient = 'from-green-400 to-teal-400';
         else if (temp > 5) gradient = 'from-blue-300 to-indigo-300';
         else gradient = 'from-blue-200 to-purple-300';
-        setCityImage(gradient);
-      } catch (err) {
-        console.log('Image non disponible, utilisation du gradient par défaut');
+        
+        setCityImage({
+          type: 'gradient',
+          value: gradient
+        });
       }
       
       // Calcul de métriques détaillées
@@ -279,27 +362,8 @@ function App() {
       setLoading(false);
       setInitialLoad(false);
     } catch (err) {
-      const errorMessages = {
-        'city not found': 'Ville non trouvée. Vérifiez l\'orthographe.',
-        'nothing to geocode': 'Veuillez saisir un nom de ville.',
-        'invalid api key': 'Erreur de configuration API. Contactez l\'administrateur.',
-        '404': 'Service temporairement indisponible. Veuillez réessayer plus tard.',
-        '429': 'Limite d\'appels API atteinte. Veuillez patienter quelques instants.',
-        '500': 'Erreur serveur. Veuillez réessayer plus tard.',
-        '502': 'Service temporairement indisponible.',
-        '503': 'Service en maintenance.',
-        '504': 'Délai d\'attente dépassé. Vérifiez votre connexion.'
-      };
-      
-      const errorKey = err.message.toLowerCase();
-      const userMessage = errorMessages[errorKey] || 
-                         (err.message.includes('Failed to fetch') ? 
-                          'Erreur de connexion. Vérifiez votre internet.' : 
-                          `Erreur: ${err.message}`);
-      
-      setError(userMessage);
       setLoading(false);
-      setInitialLoad(false);
+      setError(err.message || 'Une erreur est survenue');
     }
   };
 
@@ -339,6 +403,7 @@ function App() {
 
   // Fonction pour déterminer si c'est le jour ou la nuit
   const getTimeOfDay = (sunrise, sunset) => {
+    if (!sunrise || !sunset) return 'day';
     const now = Date.now() / 1000;
     return now > sunrise && now < sunset ? 'day' : 'night';
   };
@@ -676,6 +741,32 @@ function App() {
     }
   }, [unit]);
 
+  // Fonction pour préparer les données de vent
+  useEffect(() => {
+    if (hourlyData.length > 0) {
+      const windChartData = hourlyData.map(hour => ({
+        hour: formatHour(hour.dt),
+        speed: hour.wind.speed,
+        direction: hour.wind.deg,
+        gusts: hour.wind.gust || 0
+      }));
+      setWindData(windChartData);
+    }
+  }, [hourlyData]);
+
+  // Fonction pour préparer les données de précipitation
+  useEffect(() => {
+    if (hourlyData.length > 0) {
+      const precipChartData = hourlyData.map(hour => ({
+        hour: formatHour(hour.dt),
+        rain: hour.rain?.['3h'] || 0,
+        snow: hour.snow?.['3h'] || 0,
+        pop: hour.pop * 100
+      }));
+      setPrecipitationData(precipChartData);
+    }
+  }, [hourlyData]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-cyan-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-300 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
@@ -900,16 +991,16 @@ function App() {
                   <p className="text-gray-600 dark:text-gray-300 mb-4">{error}</p>
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
                     <button 
-                      onClick={() => fetchWeather('Paris, FR')}
+                      onClick={() => fetchWeather('Goma, CD')}
                       className="px-6 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl hover:from-blue-600 hover:to-cyan-600 transition-all"
                     >
-                      Essayer Paris, FR
+                      Essayer Goma, CD
                     </button>
                     <button 
-                      onClick={() => fetchWeather('London, GB')}
+                      onClick={() => fetchWeather('Kindu, CD')}
                       className="px-6 py-2 bg-gray-200/80 dark:bg-gray-700/80 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
                     >
-                      Essayer London, GB
+                      Essayer Kindu, CD
                     </button>
                     <button 
                       onClick={getCurrentLocationWeather}
@@ -921,10 +1012,34 @@ function App() {
                 </div>
               ) : weatherData && (
                 <div className="space-y-6">
+
                   {/* En-tête météo actuelle avec image de fond */}
-                  <div className={`relative overflow-hidden bg-gradient-to-br ${cityImage} backdrop-blur-lg rounded-2xl shadow-lg transition-colors duration-300 border border-white/20 dark:border-gray-700/20`}>
-                    <div className="absolute inset-0 bg-black/10 dark:bg-black/30"></div>
+                  <div className="relative overflow-hidden backdrop-blur-lg rounded-2xl shadow-lg transition-colors duration-300 border border-white/20 dark:border-gray-700/20">
+                    {/* Conditionnel : Image ou Gradient */}
+                    {cityImage ? (
+                      cityImage.type === 'image' ? (
+                        <>
+                          {/* Image Unsplash */}
+                          <div 
+                            className="absolute inset-0 bg-cover bg-center"
+                            style={{ backgroundImage: `url(${cityImage.url})` }}
+                          />
+                          {/* Overlay sombre pour améliorer la lisibilité */}
+                          <div className="absolute inset-0 bg-black/40"></div>
+                        </>
+                      ) : (
+                        /* Gradient de secours */
+                        <div className={`absolute inset-0 bg-gradient-to-br ${cityImage.value}`}></div>
+                      )
+                    ) : (
+                      /* Gradient par défaut si aucun cityImage (au démarrage) */
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-cyan-400"></div>
+                    )}
                     
+                    {/* Overlay supplémentaire pour le contraste */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+                    
+                    {/* Contenu principal */}
                     <div className="relative z-10 p-6 md:p-8">
                       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
                         <div className="flex items-center gap-4">
