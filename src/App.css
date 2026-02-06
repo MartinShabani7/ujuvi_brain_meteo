@@ -1,0 +1,44 @@
+/* Thèmes clair et sombre */
+.light-theme {
+  --bg-gradient-start: #f0f9ff;
+  --bg-gradient-end: #e0f2fe;
+  --text-primary: #1f2937;
+  --text-secondary: #4b5563;
+  --card-bg: #ffffff;
+  --border-color: #e5e7eb;
+}
+
+.dark-theme {
+  --bg-gradient-start: #111827;
+  --bg-gradient-end: #1f2937;
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --card-bg: #374151;
+  --border-color: #4b5563;
+}
+
+/* Application des variables CSS */
+.min-h-screen {
+  background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
+}
+
+.bg-white {
+  background-color: var(--card-bg);
+}
+
+.text-gray-800 {
+  color: var(--text-primary);
+}
+
+.text-gray-600, .text-gray-700 {
+  color: var(--text-secondary);
+}
+
+.border-gray-300, .border-gray-200 {
+  border-color: var(--border-color);
+}
+
+/* Transitions douces */
+* {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
